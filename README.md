@@ -1,216 +1,425 @@
-# admintool的功能和用法
+# 测试系统合约功能及重复交易
 
-## install requirements
+## 测试系统合约功能
 
-```
-$ pip install -r requirements.txt
-```
+暂时包括共识节点管理合约，权限管理合约及配额管理合约
 
-## 主要功能
-可通过运行如下命令查看：
-```
-./admintool.sh --help
-```
+测试步骤(脚本):
+0. 调用eth_call获得get类函数返回值(限于系统合约，因为其地址固定)
+1. 调用tests/integrate_test/cita_start.sh脚本启动CITA
+2. 调用scripts/txtool/txtool/check.py验证CITA启动
+3. 调用scripts/txtool/txtool/txtool/make_tx.py构造交易
+4. 调用scripts/txtool/txtool/txtool/send_tx发送交易
+5. 调用scripts/txtool/txtool/txtool/get_receipt获得receipt内结果验证功能
+6. 调用eth_call获得get类函数返回值
+以上是通用测试流程，实际测试过程中需要多次调用3-6过程
 
-结果如下：
-```
-usage: ./admintool.sh -a admin_id -l ip_list -n consensus_name -m crypto_method -d block_duration -t
-option:
--a admin_id    admin identifier
-    default value is 'admin'
+*以上txtool下脚本使用方法可以查看其README文档*
 
--l ip_list     list all the node's IP and port
-    default value is '127.0.0.1:4000,127.0.0.1:4001,127.0.0.1:4002,127.0.0.1:4003'
+### 共识节点管理
 
--n consensus_name  name of consensus algorithm
-    default value is 'tendermint', other is 'raft' and 'poa'
+#### 测试功能1: 增加共识节点
+*(过程中需要调用权限系统合约来获取发交易权限)*
 
--m crypto_method    name of crypto algorithm
-    default value is 'SECP'
+过程及数据构造:
 
--d block_duration    block generating duration(millisecond)
-    default value is '3000'
-
--t            consensus test flag, only valid for tendermint
-
--h enable jsonrpc http
-   default enable 'true'
-
--w enable jsonrpc websocket
-   default enable 'false'
-
--P define jsonrpc HTTP port or websocket port
-   default port is '1337' or '4337'
-```
-
-当前默认初始配置为四个节点，如果需要在admintool.sh脚本里**初始配置N个节点**，可通过如下命令，比如配置五个节点：
-```
-./admintool.sh -l "127.0.0.1:4000,127.0.0.1:4001,127.0.0.1:4002,127.0.0.1:4003,127.0.0.1:4004"
-```
-
-## setup
+0. use jsonrpc to check the list of the consensus node
 
 ```
-$ ./admintool.sh
+curl -X POST --data '{"jsonrpc":"2.0","method":"eth_call", "params":[{"to":"0x00000000000000000000000000000000013241a2", "data":"0x609df32f"}, "0x0"],"id":2}' 127.0.0.1:1337
 ```
 
-  运行之后会生成`release`文件夹，里面包含节点文件以及相关的配置文件，具体如下：
-- 生成私钥和地址，私钥存放在`admintool/release/nodeID/privkey`，其中nodeID为节点号；而所有节点地址都存放在`admintool/release/authorities`；
-- 生成网络配置文件，存放在`admintool/release/nodeID/network.toml`，文件内容主要为总节点数、本地节点端口以及其它节点的ip和端口号；
-- 生成genesis块文件，存放`在admintool/release/nodeID/genesis.json`， 其中timestamp为时间戳，秒为单位；prevhash指前一个块哈希，这里是默认值；而alloc指部署到创世块的合约内容；
-- 生成节点配置文件，存放在`admintool/release/nodeID/consensus.json`，主要包含共识算法的相关参数；
-- 生成jsonrpc配置文件，存放在`admintool/release/nodeID/jsonrpc.json`，主要包含jsonrpc模块的相关参数。
+*构造方法详见jsonRPC README文档*
 
-## 系统合约
+结果:
 
-系统合约是从genesis块开始就部署到链上的用来实现特定功能的合约，它的合约地址写在genesis块里，是固定的地址。CITA里主要的系统合约有节点管理合约、配额管理合约和权限管理合约等。
+```
+{"jsonrpc":"2.0","id":2,"result":"0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000507f93743cf1dd841b1e9c028a6ed7893c176015dab7f938478e4f80781c0e0c786b2efbbca68a2248e9b5b04c2c10681800c4ff7e1307fd7d4eab7715f12bd7b684f1c958c15548ebbce378726c9cf4d000000000000000000000000000000000"}
+```
 
-### 初始化系统合约说明
+其中:
+* `result`: 获得具体的共识节点数据需要解析。解析方法参考 [contract ABI](https://github.com/ethereum/wiki/wiki/Ethereum-Contract-ABI)
 
-用户可选择自定义初始化系统合约数据及使用系统默认数据，其中release文件下的`init_data.json`为初始化系统合约数据文件。
+1. 由具有权限地址0x1a702a25c6bca72b67987968f0bfb3a3213c5688授予具有增删节点管理权限的地址0x4b5ae4567ad5d9fb92bc9afd6a657e6fa13a2523权限
 
-#### 用户自定义初始化系统合约数据
+*(以上两个地址皆系统内置，详见admintool README)*
 
-用户可在本目录下创建`init_data.json`文件来自定义系统合约的初始化数据。格式参考`init_data_example.json`文件，如下:
+```
+python make_tx.py --to "00000000000000000000000000000000013241a4" --code "301da8700000000000000000000000004b5ae4567ad5d9fb92bc9afd6a657e6fa13a25230000000000000000000000000000000000000000000000000000000000000001" --privkey "866c936ff332228948bdefc15b1877c88e0effce703ee6de898cffcafe9bbe25"
+```
 
-```json
+构造方法:
+* `make_tx.py`的详细使用方法可以运行`pythpn make_tx.py -h`来查看
+* `--to`: 表示要调用的合约的地址
+* `--code`: 构造方法为合约方法hash加其参数，参考 [contract ABI](https://github.com/ethereum/wiki/wiki/Ethereum-Contract-ABI)。 合约hash可由命令`solc x.sol --hash`获得或通过[remix](remix.ethereum.org)
+* `--privkey`: 表示交易的签名私钥。实例为具有发交易权限的账户的私钥
+
+2. `python send_tx.py`. 结果如下:
+
+```
+{"jsonrpc":"2.0","id":1,"result":{"hash":"0xde05dc52e88ff6d3d1ce8212255dd3a13444edbd507c7d401ad1019ba8f75355","status":"Ok"}}
+```
+
+结果如下:
+* `hash`: 代表生成的交易hash
+* `status`: 发交易状态。`OK`为发送成功
+
+3. `python get_receipt.py` 结果如下:
+
+```
 {
-    "0x00000000000000000000000000000000013241a2": [[], ["0x4b5ae4567ad5d9fb92bc9afd6a657e6fa13a2523"]],
-    "0x00000000000000000000000000000000013241a3": "0xd3f1a71d1d8f073f4e725f57bbe14d67da22f888",
-    "0x00000000000000000000000000000000013241a4": [["0x1a702a25c6bca72b67987968f0bfb3a3213c5688"], ["0x0dbd369a741319fa5107733e2c9db9929093e3c7"]]
+  "contractAddress": null,
+  "cumulativeGasUsed": "0xbb06",
+  "logs": [
+    {
+      "blockHash": "0xc8fe0a4961bdc67f25c668ec775dd52a4552120a3fb5178600b95f548d778eff",
+      "transactionHash": "0xde05dc52e88ff6d3d1ce8212255dd3a13444edbd507c7d401ad1019ba8f75355",
+      "transactionIndex": "0x0",
+      "topics": [
+        "0xca571b17c94502f9fcce67874fd8e4ac41a6139e5dd6f79836393bcc12a0e765"
+      ],
+      "blockNumber": "0x21",
+      "address": "0x00000000000000000000000000000000013241a4",
+      "transactionLogIndex": "0x0",
+      "logIndex": "0x0",
+      "data": "0x0000000000000000000000004b5ae4567ad5d9fb92bc9afd6a657e6fa13a25230000000000000000000000000000000000000000000000000000000000000001"
+    }
+  ],
+  "blockHash": "0xc8fe0a4961bdc67f25c668ec775dd52a4552120a3fb5178600b95f548d778eff",
+  "transactionHash": "0xde05dc52e88ff6d3d1ce8212255dd3a13444edbd507c7d401ad1019ba8f75355",
+  "root": null,
+  "errorMessage": null,
+  "blockNumber": "0x21",
+  "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000004000000000000000000000000000000000000080000000000000000000000000000100000000000000000000000000000000000000",
+  "transactionIndex": "0x0",
+  "gasUsed": "0xbb06"
+}
+```
+
+其中:
+* `errorMessage`: `null`代表发送成功
+
+4. 由具有增减节点管理的地址进行增加共识节点的操作，测试的增加地址为`0x3f1a71d1d8f073f4e725f57bbe14d67da22f888`。首先调用`new`方法
+```
+python make_tx.py --to "00000000000000000000000000000000013241a2" --code "ddad2ffe000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888" --privkey "5f0258a4778057a8a7d97809bd209055b2fbafa654ce7d31ec7191066b9225e6"
+```
+
+*构造方法见步骤1*
+
+5. python send_tx.py
+
+```
+{"jsonrpc":"2.0","id":1,"result":{"hash":"0x54d242d3284181610f663a41f1b0c3e14851ae928065f02a03690660a77f1de4","status":"Ok"}} 
+```
+
+*具体见步骤2*
+
+6. python get_receit.py
+
+```
+{
+  "contractAddress": null,
+  "cumulativeGasUsed": "0x56b0",
+  "logs": [
+    {
+      "blockHash": "0xbe2a2b5c0b307155cdd78f665ecef6c0464f7b86262ed1f04f187c4028bcf32c",
+      "transactionHash": "0x54d242d3284181610f663a41f1b0c3e14851ae928065f02a03690660a77f1de4",
+      "transactionIndex": "0x0",
+      "topics": [
+        "0xfd96b5bdd2e0412ade018159455c7af2bed1366ab61906962a1b5638f29c68c1"
+      ],
+      "blockNumber": "0x37",
+      "address": "0x00000000000000000000000000000000013241a2",
+      "transactionLogIndex": "0x0",
+      "logIndex": "0x0",
+      "data": "0x000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888"
+    }
+  ],
+  "blockHash": "0xbe2a2b5c0b307155cdd78f665ecef6c0464f7b86262ed1f04f187c4028bcf32c",
+  "transactionHash": "0x54d242d3284181610f663a41f1b0c3e14851ae928065f02a03690660a77f1de4",
+  "root": null,
+  "errorMessage": null,
+  "blockNumber": "0x37",
+  "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000004000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000208000000000000000000000000000",
+  "transactionIndex": "0x0",
+  "gasUsed": "0x56b0"
+}
+```
+
+其中:
+* `data`: 为调用合约方法过程中记录的event，可与构造交易时的数据进行对比。check `0x000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888`为测试地址。
+
+7. 调用`approve`升级测试地址为共识节点地址
+
+```
+python make_tx.py --to "00000000000000000000000000000000013241a2" --code "dd4c97a0000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888" --privkey "5f0258a4778057a8a7d97809bd209055b2fbafa654ce7d31ec7191066b9225e6"
+```
+
+*构造方法见步骤1*
+
+8. python send_tx.py
+
+```
+{"jsonrpc":"2.0","id":1,"result":{"hash":"0x2fc76cc95e265bbaf0ded7787d76d34ea02df56f709e2e84168de04b700ad800","status":"Ok"}}
+```
+
+*具体见步骤2*
+
+9. python get_receipt.py
+
+```
+{
+  "contractAddress": null,
+  "cumulativeGasUsed": "0xced5",
+  "logs": [
+    {
+      "blockHash": "0x0ae7bf0a99b0b4468a718575ebfdd12621898b16df18b113c624faeec0907bbe",
+      "transactionHash": "0x2fc76cc95e265bbaf0ded7787d76d34ea02df56f709e2e84168de04b700ad800",
+      "transactionIndex": "0x0",
+      "topics": [
+        "0x5d55f24dd047ef52a5f36ddefc8c424e4b26c8415d8758be1bbb88b5c65e04eb"
+      ],
+      "blockNumber": "0x3d",
+      "address": "0x00000000000000000000000000000000013241a2",
+      "transactionLogIndex": "0x0",
+      "logIndex": "0x0",
+      "data": "0x000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888"
+    }
+  ],
+  "blockHash": "0x0ae7bf0a99b0b4468a718575ebfdd12621898b16df18b113c624faeec0907bbe",
+  "transactionHash": "0x2fc76cc95e265bbaf0ded7787d76d34ea02df56f709e2e84168de04b700ad800",
+  "root": null,
+  "errorMessage": null,
+  "blockNumber": "0x3d",
+  "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000010000000000000000040000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000",
+  "transactionIndex": "0x0",
+  "gasUsed": "0xced5"
+}
+```
+
+其中:
+* `data`: 为调用合约方法过程中记录的event，可与构造交易时的数据进行对比。check `0x000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888`为测试地址。
+
+10. 查看 chain.log
+
+```
+20171011 16:28:59 - TRACE - node ad480135eaf2fe211ea23508b0ad014d9e9ffd35
+20171011 16:28:59 - TRACE - node bcbd3a00f2b79e2f3f5763b8b832f64077fd3d52
+20171011 16:28:59 - TRACE - node 447cab8c53a5474628b857c5707d9ad9090a1502
+20171011 16:28:59 - TRACE - node 6f8c4f89e49d8689712873f0a541a87f75a4772c
+20171011 16:28:59 - TRACE - node d3f1a71d1d8f073f4e725f57bbe14d67da22f888
+```
+
+* chain里可以看到共识节点多了`d3f1a71d1d8f073f4e725f57bbe14d67da22f888`
+
+11. check the consensus node list of the genensis 
+
+```
+curl -X POST --data '{"jsonrpc":"2.0","method":"eth_call", "params":[{"to":"0x00000000000000000000000000000000013241a2", "data":"0x609df32f"}, "0x0"],"id":2}' 127.0.0.1:1337
+```
+
+*结果见步骤0*
+
+12. check the consensus node list of the new
+
+```
+curl -X POST --data '{"jsonrpc":"2.0","method":"eth_call", "params":[{"to":"0x00000000000000000000000000000000013241a2", "data":"0x609df32f"}, "0x3d"],"id":2}' 127.0.0.1:1337
+```
+
+其中:
+* `0x3d`为步骤8中获取到的`blockNumber`
+
+返回结果如下:
+
+```
+{"jsonrpc":"2.0","id":2,"result":"0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000006436234c42397f76dee7a50880db28965164cfa245cee22b6524d24a9796f29ee8e21f6c65e5326b89e7b5fc36940c1370aaea804353fdfc02a8915bab08666047109571f510abaaab9efeb932bdc3eedfd3f1a71d1d8f073f4e725f57bbe14d67da22f88800000000000000000000000000000000000000000000000000000000"}
+```
+
+其中:
+* `result`与上步骤中`result`中对比，多了一个共识节点，解析结果多的节点为测试地址*文档暂缺*
+
+### 配额管理
+
+#### 测试功能1: call setGlobalAccountGasLimit function
+*(过程中需要调用权限系统合约来获取发交易权限)*
+
+过程及数据构造:
+1. 由具有权限地址0x1a702a25c6bca72b67987968f0bfb3a3213c5688授予具有增删节点管理的地址0xd3f1a71d1d8f073f4e725f57bbe14d67da22f888发送交易的权限
+
+```
+python make_tx.py --to "00000000000000000000000000000000013241a4" --code "301da870000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f8880000000000000000000000000000000000000000000000000000000000000001" --privkey "866c936ff332228948bdefc15b1877c88e0effce703ee6de898cffcafe9bbe25"
+```
+*详见步骤1*
+
+2. python send_tx.py. 结果如下:
+
+```
+{"jsonrpc":"2.0","id":1,"result":{"hash":"0x19403b61c93731f1c0473b4e22f8fcbd392f6078f360b8b9f44aca870780135d","status":"Ok"}} 
+```
+
+*详见步骤2*
+
+3. python get_receipt.py. 结果如下:
+
+```
+{
+  "contractAddress": null,
+  "cumulativeGasUsed": "0xbb4d",
+  "logs": [
+    {
+      "blockHash": "0xb00297f08d90cd12e1dd9582285b432431d799ea23a2daf9abe59739e8ed42ba",
+      "transactionHash": "0x19403b61c93731f1c0473b4e22f8fcbd392f6078f360b8b9f44aca870780135d",
+      "transactionIndex": "0x0",
+      "topics": [
+        "0xca571b17c94502f9fcce67874fd8e4ac41a6139e5dd6f79836393bcc12a0e765"
+      ],
+      "blockNumber": "0x10",
+      "address": "0x00000000000000000000000000000000013241a4",
+      "transactionLogIndex": "0x0",
+      "logIndex": "0x0",
+      "data": "0x000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f8880000000000000000000000000000000000000000000000000000000000000001"
+    }
+  ],
+  "blockHash": "0xb00297f08d90cd12e1dd9582285b432431d799ea23a2daf9abe59739e8ed42ba",
+  "transactionHash": "0x19403b61c93731f1c0473b4e22f8fcbd392f6078f360b8b9f44aca870780135d",
+  "root": null,
+  "errorMessage": null,
+  "blockNumber": "0x10",
+  "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000004000000000000000000000000000000000000080000000000000000000000000000100000000000000000000000000000000000000",
+  "transactionIndex": "0x0",
+  "gasUsed": "0xbb4d"
+}
+```
+
+*详见步骤3*
+
+4. 由具有设置配额的地址进行设置配额的操作，测试设置的quota为`0x2b0ce58`
+
+```
+python make_tx.py --to "00000000000000000000000000000000013241a3" --code "c9bcec770000000000000000000000000000000000000000000000000000000002b0ce58" --privkey "61b760173f6d6b87726a28b93d7fcb4b4f842224921de8fa8e49b983a3388c03"
+```
+
+*详见步骤1*
+
+5. `python send_tx.py`. 结果如下:
+
+```
+{"jsonrpc":"2.0","id":1,"result":{"hash":"0xed8ba4616d4486d7dd83cb5fb8a4eb15fe4795b5b57068f56436bf80437aaeb6","status":"Ok"}}
+```
+
+*详见步骤2*
+
+6. `python get_receipt.py`. 结果如下:
+
+```
+{
+  "contractAddress": null,
+  "cumulativeGasUsed": "0x1e7f",
+  "logs": [
+    {
+      "blockHash": "0x03fe137252067d396f83196187d2d0651d182bd1c05b047f5784e3c5bf5a7a9f",
+      "transactionHash": "0xed8ba4616d4486d7dd83cb5fb8a4eb15fe4795b5b57068f56436bf80437aaeb6",
+      "transactionIndex": "0x0",
+      "topics": [
+        "0x8b477181257c0ad079608a1cd6f3031245b413eb3036d8e12c1038b3a5dfe9db",
+        "0x6163636f756e744761734c696d69740000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000002b0ce58",
+        "0x000000000000000000000000d3f1a71d1d8f073f4e725f57bbe14d67da22f888"
+      ],
+      "blockNumber": "0x23",
+      "address": "0x00000000000000000000000000000000013241a3",
+      "transactionLogIndex": "0x0",
+      "logIndex": "0x0",
+      "data": "0x"
+    }
+  ],
+  "blockHash": "0x03fe137252067d396f83196187d2d0651d182bd1c05b047f5784e3c5bf5a7a9f",
+  "transactionHash": "0xed8ba4616d4486d7dd83cb5fb8a4eb15fe4795b5b57068f56436bf80437aaeb6",
+  "root": null,
+  "errorMessage": null,
+  "blockNumber": "0x23",
+  "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000002000000000400000000000000000000000000000000000200000000000000000000010000020000000000000000000000000000000000000000400000000000000000000000000000000004000000000000002000000080100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000080004000000000000000",
+  "transactionIndex": "0x0",
+  "gasUsed": "0x1e7f"
+}
+```
+
+其中:
+* `topics`: 为index的event参数。
+
+7. `chain.log`
+
+```
+20171012 20:07:24 - TRACE - account_gas_limit: 45141592
+```
+
+*check the account gas limit: 45141592*
+
+8. eth_call getAccountGasLimit
+
+```
+curl -X POST --data '{"jsonrpc":"2.0","method":"eth_call", "params":[{"to":"0x00000000000000000000000000000000013241a3", "data":"0xdae99b3a"}, "0x2b"],"id":2}' 127.0.0.1:1337
+```
+
+*详见步骤0*
+
+结果如下:
+
+```
+{"jsonrpc":"2.0","id":2,"result":"0x0000000000000000000000000000000000000000000000000000000002b0ce58"}
+```
+
+`check the result`
+
+9. set tx quota 999999999
+
+*需要修改make_tx.py中quota值*
+
+```
+python make_tx.py --privkey "352416e1c910e413768c51390dfd791b414212b7b4fe6b1a18f58007fa894214" --code "606060405234156100105760006000fd5b610015565b610148806100246000396000f30060606040526000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff16806360fe47b11461004e5780636d4ce63c1461007257610048565b60006000fd5b341561005a5760006000fd5b610070600480803590602001909190505061009c565b005b341561007e5760006000fd5b61008661010a565b6040518082815260200191505060405180910390f35b60006000620186a09150600090505b818110156100cd578060006000508190909055505b80806001019150506100ab565b7fdf7a95aebff315db1b7716215d602ab537373cdb769232aae6055c06e798425b836040518082815260200191505060405180910390a15b505050565b60006000600050549050610119565b905600a165627a7a72305820dbeea32b7d59673d43cc6915f194839ee2561c032a57d7d46ed8433972fd34a20029"
+```
+
+*详见步骤1*
+
+10. `python send_tx.py`
+
+```
+{"jsonrpc":"2.0","id":1,"result":{"hash":"0xfd3899c486542758c618546ff0f24fe60173b25ad64b82632b86da17515312de","status":"Ok"}}
+```
+
+*详见步骤2*
+
+11. `python get_receipt.py`
+
+```
+{
+  "contractAddress": "0x73552bc4e960a1d53013b40074569ea05b950b4d",
+  "cumulativeGasUsed": "0x0",
+  "logs": [],
+  "blockHash": "0xe05ebf44c5eabe62f9dfe82d0c2b82cd02e8e6763f3f142b11a47a712cc46976",
+  "transactionHash": "0xfd3899c486542758c618546ff0f24fe60173b25ad64b82632b86da17515312de",
+  "root": null,
+  "errorMessage": "Account gas limit reached.",
+  "blockNumber": "0x324",
+  "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "transactionIndex": "0x0",
+  "gasUsed": "0x0"
 }
 ```
 
 其中:
 
-* `0x00000000000000000000000000000000013241a2`: 代表共识节点管理系统合约地址，二维数组内`[]`内为节点地址列表，由系统生成，忽略此选项，用户可修改`["0x4b5ae4567ad5d9fb92bc9afd6a657e6fa13a2523"]`值为自己生成的地址，
-                                                其为管理员地址，由此地址进行共识节点的增删。 ***须保存好对应的私钥***
+* `errorMessage`: check `Account gas limit reached.` 
 
-* `0x00000000000000000000000000000000013241a3`: 代表配额管理系统合约地址，用户可修改`0xd3f1a71d1d8f073f4e725f57bbe14d67da22f888`值为自己生成的地址，其为配额管理的管理员地址，
-                                                可由此地址进行配额的管理。 ***须保存好对应的私钥***
+### 测试发送重复交易
 
-* `0x00000000000000000000000000000000013241a4`: 代表权限管理系统合约地址，第一个数组为拥有发送交易权限的地址列表，第二个数组为拥有创建合约权限的地址列表。
-                                                用户可分别填入多个地址。 ***须保存好对应的私钥***
+构造相同nonce和valid_until_block，即为相同交易，结果如下:
 
-#### 使用默认的初始化数据
-
-用户可使用系统默认的初始化数据，即`init_data_example.json`文件，地址及其对应的私钥如下表所示:
-
-|                          privkey                                 |                   address                  |
-|:----------------------------------------------------------------:|:------------------------------------------:|
-| 5f0258a4778057a8a7d97809bd209055b2fbafa654ce7d31ec7191066b9225e6 | 0x4b5ae4567ad5d9fb92bc9afd6a657e6fa13a2523 |
-| 61b760173f6d6b87726a28b93d7fcb4b4f842224921de8fa8e49b983a3388c03 | 0xd3f1a71d1d8f073f4e725f57bbe14d67da22f888 |
-| 866c936ff332228948bdefc15b1877c88e0effce703ee6de898cffcafe9bbe25 | 0x1a702a25c6bca72b67987968f0bfb3a3213c5688 |
-| 352416e1c910e413768c51390dfd791b414212b7b4fe6b1a18f58007fa894214 | 0x0dbd369a741319fa5107733e2c9db9929093e3c7 |
-
-#### 用户自定义检查配置文件
-
-用户可在本目录下创建`chain.json`文件来自定义发送交易时是否检查账户的permission等，默认是需要检查的。格式参考`chain_check_example.json`文件，如下:
+*修改make_tx.py脚本*
 
 ```
-{
-  "check_permission": true
-}
+{"jsonrpc":"2.0","id":1,"error":{"code":6,"message":"TxResponse {hash: 1db3aa32e45986232c182e8d84cd68e1342618f87782236d33745cc102fe5af3, status: \"Dup\" }"}}
 ```
 
 其中:
-
-* `check_permission`: 表示发送交易时，是否检查账户拥有相应的权限，其中true表示打开检查，false表示关闭检查，默认为true。
-
-### 节点管理系统合约
-
-节点管理合约存放在`cita/contracts/node_manager.sol`，函数签名可通过`solc node_manager.sol --hashes`编译得到，也可以在[remix](https://remix.ethereum.org)上查看.
-node_manager.sol合约详情如下所示：
-```
-contract address: 0x00000000000000000000000000000000013241a2
-Function signatures:
-    dd4c97a0: approveNode(address)
-    2d4ede93: deleteNode(address)
-    30ccebb5: getStatus(address)
-    609df32f: listNode()
-    ddad2ffe: newNode(address)
-    645b8b1b: status(address)
-```
-节点管理合约的目的是为了能够动态增删节点，即在已经运行的一些节点中增加或删除节点，这可以通过调用合约中的方法实现。
-合约中节点有三种状态：Close，Ready，Start，初始默认为Close，可以通过调用合约里的函数来改变节点状态。
-比如，增加节点，申请者首先调用newNode()方法，审批者(共识节点)调用approveNode来同意该节点成为共识节点。下面介绍下合约中主要的几种方法：
-
-- `newNode(address)`，该方法功能是申请成为共识节点，其中参数address表示申请节点的地址，申请者通过cita_sendTransaction调用合约上的该方法，此时节点状态变更为Ready；
-
-- `approveNode(address)`，该方法功能是同意其成为共识节点，其中参数address表示状态为Ready的节点地址，审批者(共识节点)通过cita_sendTransaction
-调用该方法来同意节点状态为Ready的节点加入共识，此时节点状态变更为Start；
-
-- `deleteNode(address)`， 该方法功能是删除共识节点，其中参数address表示状态Start的节点地址，状态为Start的节点可通过cita_sendTransaction调用合约上的该方法来退出共识，
-此时节点状态变更为Close。
-
-
-### 配额管理系统合约
-
-配额管理合约存放在`cita/contracts/quota.sol`，合约详情如下所示：
-
-```
-contract address: 0x00000000000000000000000000000000013241a3
-    70480275: addAdmin(address)
-    dae99b3a: getAccountGasLimit()
-    776dd3b6: getAccountQuota(address)
-    54f6127f: getData(bytes32)
-    6cf72948: getSpecialUsers()
-    7a490f7e: getUsersQuota()
-    3a5b5cf3: getblockGasLimit()
-    24d7806c: isAdmin(address)
-    dfa87425: setAccountGasLimit(address,uint256)
-    a69257f3: setBlockGasLimit(uint256)
-    eb93eddf: setGlobal(bytes32,bytes32)
-    c9bcec77: setGlobalAccountGasLimit(uint256)
-    748ba8dd: setIsGlobal(bytes32,bool)
-    50f2ee97: setSpecial(address,bytes32,bytes32)
-```
-
-配额管理合约为每个block和account设置gasLimit，其中block中的gasLimit有效地控制该区块中的交易数量，account中的gasLimit有效地控制该用户在当前区块中发送的交易数量，
-显然，account中的gasLimit是小于等于block中的gasLimit。用户分为specialUser和globalUser，其中specialUser的gasLimit默认值等于block的gasLimit，即只要不达到区块的gasLimit，
-可以任意发送交易。而globalUser的gasLimit默认值要远小于block的gasLimit。另外，还有一类管理员账户，可设置block和account的gasLimit。
-合约的主要方法如下：
-
-- `addAdmin(address)`，该方法为添加管理账户，只有发送交易的用户为管理员才能成功添加其他用户为管理员，通过cita_sendTransaction调用。
-
-- `setAccountGasLimit(address,uint256)`，该方法为设置其他用户的gasLimit，只有身份为管理员的地址才可以通过cita_sendTransaction成功调用。
-
-- `setBlockGasLimit(uint256)`，该方法为设置区块的gasLimit，只有身份为管理员的地址才可以通过cita_sendTransaction成功调用。
-
-- `getData(bytes32)`，该方法为查询用户或区块的gasLimit，所有地址都可以通过eth_call成功调用此方法。
-
-- `getSpecialUsers()`，该方法为查询所有specical用户，所有地址都可以通过eth_call成功调用此方法。
-
-- `getUsersQuota()`，该方法为查询special用户对应的gasLimit，即配额，所有地址都可以通过eth_call成功调用此方法。
-
-- `getAccountQuota(address)`，该方法为查询指定用户对应的gasLimit，即配额，所有地址都可以通过eth_call成功调用此方法。
-
-- `getAccountGasLimit()`，该方法为查询AccountGasLimit，即配额，所有地址都可以通过eth_call成功调用此方法。
-
-- `getblockGasLimit()`，该方法为查询blockGasLimit，即配额，所有地址都可以通过eth_call成功调用此方法。
-
-### 权限管理系统合约
-
-权限管理合约存放在`cita/contracts/permission_manager.sol`，该合约将权限管理引进系统，有效控制用户交易的权限，合约详情如下所示：
-```
-contract address: 0x00000000000000000000000000000000013241a4
-Function signatures:
-    301da870: grantPermission(address,uint8)
-    54ad6352: queryPermission(address)
-    6f4eaf7a: queryUsersOfPermission(uint8)
-    dd8a8a05: revokePermission(address,uint8)
-```
-
-目前该合约的权限管理功能比较简单，权限共有两种：发送交易和创建合约（Send, Create）。每个地址默认没有这两种权限，可通过有权限的地址授权获得其中一种或两种权限。
-比如，授予Create权限，已经拥有Create权限的地址可调用合约中的grantPermission()方法，来给其他地址授予Create权限。
-合约中的方法介绍如下：
-
-- `grantPermission(address,uint8)`，该方法是授予某种权限，其中参数中的address表示授予权限的地址，uint8表示权限名称，拥有该权限的地址可
-通过cita_sendTransaction调用该方法来授予其他地址该权限。
-
-- `revokePermission(address,uint8)`，该方法是取消某种权限，其中参数address表示取消权限的地址，uint8表示权限名称，拥有该权限的地址可
-通过cita_sendTransaction调用该方法来取消其他地址该权限。
-
-- `queryPermission(address)`，该方法是查询指定地址的权限，可通过eth_call调用该方法来查询。
-
-- `queryUsersOfPermission(uint8)`， 该方法是查询拥有指定权限的所有用户，可通过eth_call调用该方法来查询。
+* `status`: `Dup`即为重复交易
