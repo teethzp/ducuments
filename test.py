@@ -7,10 +7,16 @@ cur.execute('select * from [dbo].[USERINFO]')
 #print(cur.fetchall())
 r=cur.fetchone()
 i=1
+f=open('userdata.txt','a')#区分a模式和w模式
 while r:
-	id,name,passwod,content=r
+	id,name,pwd,content=r
 	print(name)
+	f.write(name.encode('gb2312'))
+	f.write(',')
+	f.write(pwd.encode('gb2312'))
+	f.write('\n')
 	r=cur.fetchone()
 	i+=1
+f.close()
 cur.close()
 conn.close()
